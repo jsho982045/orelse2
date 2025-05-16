@@ -8,7 +8,7 @@ import ThemeToggle from './ThemeToggle';
 export default function Navbar() {
   return (
     // Apply direct background, border, and sticky positioning
-    <nav className="bg-black
+    <nav className="bg-[#4A90E2]
                   sticky top-0 z-40">
       {/* Container */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
