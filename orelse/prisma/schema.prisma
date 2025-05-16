@@ -1,0 +1,112 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql" // This should match the provider you initialized with
+  url      = env("DATABASE_URL") // This tells Prisma to get the URL from your .env file
+}
+
+// Standard NextAuth.js models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId]) // Added for query optimization
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId]) // Added for query optimization
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  // OrElse specific fields
+  stripeCustomerId   String?   @unique @map("stripe_customer_id")
+  subscriptionStatus String?   @map("subscription_status") // e.g., "active", "inactive", "trialing"
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relationships to OrElse core features (to be expanded later)
+  // goals Goal[]
+  // createdElseActions ElseAction[] // Actions suggested by this user
+  // votes UserElseActionVote[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Future OrElse Models (placeholders for now, we will detail them later)
+// model Goal {
+//   id          String    @id @default(cuid())
+//   title       String
+//   description String?
+//   deadline    DateTime
+//   isPublic    Boolean   @default(true)
+//   isAchieved  Boolean?  @default(false) // null = pending, false = failed, true = achieved
+//   authorId    String
+//   author      User      @relation(fields: [authorId], references: [id], name: "UserGoals")
+//   createdAt   DateTime  @default(now())
+//   updatedAt   DateTime  @updatedAt
+//
+//   elseActions ElseAction[]
+//   // communityVotes for the "Else" will likely be on the ElseAction itself
+// }
+
+// model ElseAction {
+//   id          String    @id @default(cuid())
+//   suggestion  String
+//   goalId      String
+//   goal        Goal      @relation(fields: [goalId], references: [id])
+//   suggesterId String
+//   suggester   User      @relation(fields: [suggesterId], references: [id], name: "UserSuggestedElseActions")
+//   isChosen    Boolean   @default(false) // True if this was the top voted "Else"
+//   createdAt   DateTime  @default(now())
+//   updatedAt   DateTime  @updatedAt
+//
+//   votes UserElseActionVote[]
+// }
+
+// model UserElseActionVote {
+//   userId       String
+//   user         User       @relation(fields: [userId], references: [id])
+//   elseActionId String
+//   elseAction   ElseAction @relation(fields: [elseActionId], references: [id])
+//   createdAt    DateTime   @default(now())
+//
+//   @@id([userId, elseActionId]) // Composite primary key
+// }
