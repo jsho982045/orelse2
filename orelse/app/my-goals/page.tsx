@@ -1,10 +1,11 @@
 // app/my-goals/page.tsx
 import prisma from '@/src/lib/prisma';
-import { Goal, GoalStatus, ElseAction } from '@prisma/client'; // Import necessary types
+import { Goal, GoalStatus, ElseAction, User } from '@prisma/client'; // Import necessary types
 import Link from 'next/link';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { redirect } from 'next/navigation'; // For redirecting if not logged in
+import SubscribeButton from '@/src/components/SubscibeButton'; // CORRECTED IMPORT PATH
 
 // Helper to format dates (can be moved to a shared utils file later if not already)
 const formatDate = (dateString: Date | string, options?: Intl.DateTimeFormatOptions): string => {
@@ -112,6 +113,15 @@ export default async function MyGoalsPage() {
 
   const currentUserId = (session.user as any).id;
 
+  // Fetch user details including subscription status
+  const user = await prisma.user.findUnique({
+    where: { id: currentUserId },
+    select: {
+      subscriptionStatus: true, 
+      // Add other fields if needed, but for this button, status is key
+    }
+  });
+
   const userGoals = await prisma.goal.findMany({
     where: {
       authorId: currentUserId,
@@ -156,25 +166,52 @@ export default async function MyGoalsPage() {
     transition-all duration-200 ease-in-out
   `;
   const pageTitleClasses = "text-4xl lg:text-5xl font-display font-bold text-[#E2E8F0] mb-2 tracking-tight"; // Using Raycast White
+  const placeholderCardClasses = "text-center py-16 bg-[#1A1A1A]/50 rounded-[36px] shadow-xl border border-[#333333]/50";
+
+
+  // !! IMPORTANT: Replace with YOUR Stripe Test Price ID !!
+  const STRIPE_PRICE_ID = process.env.STRIPE_YOUR_PRODUCT_PRICE_ID || "YOUR_TEST_PRICE_ID_HERE"; 
+  if (STRIPE_PRICE_ID === "YOUR_TEST_PRICE_ID_HERE" && process.env.NODE_ENV !== "development") {
+      console.warn("WARNING: Stripe Price ID is not set correctly for production!");
+  }
+
 
   return (
     <div className="container mx-auto p-4">
       <div className="flex flex-col sm:flex-row justify-between items-center mb-10 gap-4">
-        <h1 className={pageTitleClasses}>
-          My Goals
-        </h1>
-        <Link href="/goal/new" className={newGoalButtonClass}>
-          Set New Goal
-        </Link>
+        <h1 className={pageTitleClasses}>My Goals</h1>
+        <Link href="/goal/new" className={newGoalButtonClass}>Set New Goal</Link>
       </div>
 
+      {/* --- Subscription Call to Action --- */}
+      {(!user?.subscriptionStatus || user.subscriptionStatus !== 'active') && (
+        <section className="mb-12 p-6 sm:p-8 rounded-[36px] bg-[#1f1f23] border border-[#C8102E]/50 shadow-2xl text-center">
+          <h2 className="text-2xl lg:text-3xl font-display font-bold text-[#C8102E] mb-3">
+            Unlock Full Potential!
+          </h2>
+          <p className="text-[#A0AEC0] mb-6 max-w-md mx-auto">
+            Get unlimited goal posts, suggestions, and votes by subscribing to OrElse Pro.
+            Just $3/month to supercharge your accountability!
+          </p>
+          <SubscribeButton 
+            priceId={STRIPE_PRICE_ID} 
+            currentSubscriptionStatus={user?.subscriptionStatus}
+            buttonText="Go Pro - $3/month"
+          />
+        </section>
+      )}
+      {user?.subscriptionStatus === 'active' && (
+         <div className="mb-10 text-center p-4 rounded-md bg-green-800/30 border border-green-600">
+            <p className="font-semibold text-green-400">OrElse Pro Activated!</p>
+         </div>
+      )}
+
+
       {processedGoals.length === 0 && (
-        <div className="text-center py-16 bg-[#1A1A1A]/50 rounded-[36px] shadow-xl border border-[#333333]/50">
-          <h2 className="text-2xl font-display text-[#E2E8F0] mb-3">No goals set yet!</h2>
-          <p className="text-[#A0AEC0] mb-6">Ready to challenge yourself? Set your first goal now.</p>
-          <Link href="/goal/new" className={newGoalButtonClass}>
-            Set Your First Goal
-          </Link>
+        <div className={placeholderCardClasses}>
+          <h2 className="text-2xl font-display text-[#E2E8F0] mb-3">Your goal slate is clean!</h2>
+          <p className="text-[#A0AEC0] mb-6">What amazing feat will you conquer next?</p>
+          <Link href="/goal/new" className={newGoalButtonClass}>Set Your First Goal</Link>
         </div>
       )}
 
