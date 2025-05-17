@@ -8,21 +8,21 @@
 @import 'tailwindcss';
 
 /* Optional: Add minimal base styles if needed */
-@layer base {
-  body {
+/* @layer base {
+  body { */
     /* Apply font-smoothing for better text rendering */
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    /* -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale; */
 
     /* Base background/text colors applied directly in layout.tsx or components */
     /* Example: You might set a default background/text color fallback here,
        but it's often better handled in layout.tsx body className */
     /* background-color: #FFFFFF; /* Example fallback */
     /* color: #1A202C;       /* Example fallback */
-  }
+  /* } */
 
   /* You can add other base resets or styles here */
-}
+/* } */
 
 /* Component layer is now mostly empty. 
   We will style components directly using Tailwind utilities in their TSX files.

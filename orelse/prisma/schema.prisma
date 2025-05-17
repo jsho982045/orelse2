@@ -57,9 +57,9 @@ model User {
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
   // Relationships to OrElse core features (to be expanded later)
-  // goals Goal[]
-  // createdElseActions ElseAction[] // Actions suggested by this user
-  // votes UserElseActionVote[]
+  goals                Goal[]
+  suggestedElseActions ElseAction[] @relation("UserSuggestedElseActions") // Actions suggested by this user
+  votes                UserElseActionVote[] @relation("UserVotes")        // Votes cast by this user
 }
 
 model VerificationToken {
@@ -70,43 +70,65 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// Future OrElse Models (placeholders for now, we will detail them later)
-// model Goal {
-//   id          String    @id @default(cuid())
-//   title       String
-//   description String?
-//   deadline    DateTime
-//   isPublic    Boolean   @default(true)
-//   isAchieved  Boolean?  @default(false) // null = pending, false = failed, true = achieved
-//   authorId    String
-//   author      User      @relation(fields: [authorId], references: [id], name: "UserGoals")
-//   createdAt   DateTime  @default(now())
-//   updatedAt   DateTime  @updatedAt
-//
-//   elseActions ElseAction[]
-//   // communityVotes for the "Else" will likely be on the ElseAction itself
-// }
+enum GoalStatus {
+  ACTIVE    // Goal is currently active and deadline has not passed
+  COMPLETED // User marked the goal as completed
+  FAILED    // Deadline passed and goal was not marked completed
+  // PENDING_CONSEQUENCE // User failed, and is now due for a consequence
+  // CONSEQUENCE_SERVED // User completed the consequence
+}
 
-// model ElseAction {
-//   id          String    @id @default(cuid())
-//   suggestion  String
-//   goalId      String
-//   goal        Goal      @relation(fields: [goalId], references: [id])
-//   suggesterId String
-//   suggester   User      @relation(fields: [suggesterId], references: [id], name: "UserSuggestedElseActions")
-//   isChosen    Boolean   @default(false) // True if this was the top voted "Else"
-//   createdAt   DateTime  @default(now())
-//   updatedAt   DateTime  @updatedAt
-//
-//   votes UserElseActionVote[]
-// }
+// Activated Goal Model
+model Goal {
+  id          String     @id @default(cuid())
+  description String? // Your original schema had this as optional, matching it.
+  deadline    DateTime
+  isPublic    Boolean    @default(true)
+  status      GoalStatus @default(ACTIVE) // Using the enum we defined
+  authorId    String
+  author      User       @relation(fields: [authorId], references: [id], onDelete: Cascade) // Removed `name: "UserGoals"` to use Prisma default, can be added back if needed.
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-// model UserElseActionVote {
-//   userId       String
-//   user         User       @relation(fields: [userId], references: [id])
-//   elseActionId String
-//   elseAction   ElseAction @relation(fields: [elseActionId], references: [id])
-//   createdAt    DateTime   @default(now())
-//
-//   @@id([userId, elseActionId]) // Composite primary key
-// }
+  elseActions ElseAction[] // Kept your placeholder for future relation
+
+  @@index([authorId])
+  @@index([status])
+  @@index([deadline])
+}
+
+model ElseAction {
+  id           String   @id @default(cuid())
+  suggestion   String   @db.Text
+  isMalicious Boolean  @default(false) // Flag for moderation (future use)
+  goalId       String
+  goal         Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  suggesterId  String
+  suggester    User     @relation(fields: [suggesterId], references: [id], name: "UserSuggestedElseActions")
+  isChosen     Boolean  @default(false) // True if this was the top voted "Else"
+  voteCount   Int      @default(0) 
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  votes UserElseActionVote[]
+  
+  @@index([goalId])
+  @@index([suggesterId])
+  @@index([voteCount]) // For ordering by votes
+}
+
+model UserElseActionVote {
+  id String @id @default(cuid())
+
+  userId       String
+  user         User       @relation("UserVotes", fields: [userId], references: [id], onDelete: Cascade) // CORRECTED: Added relation name "UserVotes" and onDelete
+
+  elseActionId String
+  elseAction   ElseAction @relation(fields: [elseActionId], references: [id], onDelete: Cascade) // Added onDelete
+
+  createdAt    DateTime   @default(now())
+
+  @@unique([userId, elseActionId])
+  @@index([elseActionId])
+  @@index([userId])
+}

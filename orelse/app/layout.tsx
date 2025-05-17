@@ -1,28 +1,31 @@
 // app/layout.tsx
-import './globals.css'; // Simplified globals.css
+import './globals.css';
 import type { Metadata } from 'next';
 import { Inter, Poppins } from 'next/font/google';
-import { ThemeProvider } from 'next-themes';
-import NextAuthProviders from '@/src/components/Providers';
+// import { ThemeProvider } from 'next-themes'; // Remove this
+import Providers from '@/src/components/Providers';
 import Navbar from '@/src/components/Navbar';
 
 const inter = Inter({
   subsets: ['latin'],
-  variable: '--font-inter', // Used by fontFamily.sans in tailwind.config.js
+  variable: '--font-inter',
   display: 'swap',
-  weight: ['400', '500', '600'],
+  weight: ['300', '400', '500', '600', '700'],
 });
 
 const poppins = Poppins({
   subsets: ['latin'],
-  variable: '--font-poppins', // Used by fontFamily.display in tailwind.config.js
+  variable: '--font-poppins',
   display: 'swap',
-  weight: ['500', '600', '700'],
+  weight: ['400', '500', '600', '700', '800'],
 });
 
 export const metadata: Metadata = {
   title: 'OrElse: Public Goal Accountability',
   description: 'Achieve your goals with fun, community-enforced consequences. OrElse!',
+  themeColor: [ // Only dark theme color needed now
+    { media: '(prefers-color-scheme: dark)', color: '#121212' }, // Raycast Black
+  ],
 };
 
 export default function RootLayout({
@@ -33,29 +36,29 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      suppressHydrationWarning // Recommended for next-themes
-      className={`${inter.variable} ${poppins.variable}`} // Make font variables available
+      className={`dark ${inter.variable} ${poppins.variable} font-sans`} // Add 'dark' class here, ensure font-sans for Inter default
     >
-      {/* Apply base background and text colors directly */}
-      {/* Tailwind's fontFamily.sans will apply Inter by default */}
-      <body className="bg-carolina-white dark:bg-raycast-black text-carolina-black dark:text-raycast-white transition-colors duration-300">
-        <ThemeProvider
-          attribute="class" // Use class strategy for dark mode
-          defaultTheme="system"
-          enableSystem
-          disableTransitionOnChange // Optional: smoother transitions without JS flicker
-        >
-          <NextAuthProviders>
-            <div className="flex flex-col min-h-screen">
-              <Navbar />
-              {/* pt-16 assumes navbar height h-16 (4rem). Adjust if needed. */}
-              <main className="flex-grow pt-16">
-                {children}
-              </main>
-              {/* Footer can go here */}
-            </div>
-          </NextAuthProviders>
-        </ThemeProvider>
+      <body
+        className={`
+          min-h-screen font-sans antialiased 
+          text-raycast-white /* Default text for dark mode */
+          bg-gradient-to-br from-[#1A1A1A] to-[#121212] /* Dark: Raycast Grey Dark to Raycast Black */
+        `}
+      >
+        {/* <ThemeProvider /> component removed */}
+        <Providers> {/* This is your NextAuth SessionProvider wrapper */}
+          <div className="flex flex-col min-h-screen">
+            <Navbar />
+            <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+              {children}
+            </main>
+            {/* Optional Footer
+            <footer className="p-4 text-center text-xs text-raycast-grey-light">
+              © {new Date().getFullYear()} OrElse. All rights reserved.
+            </footer>
+            */}
+          </div>
+        </Providers>
       </body>
     </html>
   );
