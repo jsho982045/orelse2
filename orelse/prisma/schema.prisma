@@ -51,8 +51,12 @@ model User {
   sessions      Session[]
 
   // OrElse specific fields
-  stripeCustomerId   String?   @unique @map("stripe_customer_id")
-  subscriptionStatus String?   @map("subscription_status") // e.g., "active", "inactive", "trialing"
+  stripeCustomerId     String?   @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?   @unique @map("stripe_subscription_id") // ID of their active subscription
+  stripePriceId        String?   @map("stripe_price_id")                // ID of the price they are subscribed to
+  stripeCurrentPeriodEnd DateTime? @map("stripe_current_period_end")   // When the current subscription period ends
+  subscriptionStatus   String?   @map("subscription_status")
+  
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
