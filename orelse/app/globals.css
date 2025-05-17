@@ -1,0 +1,48 @@
+/* app/globals.css */
+
+/* Include Tailwind's base, components, and utilities styles */
+/* @tailwind base;
+@tailwind components;
+@tailwind utilities; */
+
+@import 'tailwindcss';
+
+/* Optional: Add minimal base styles if needed */
+/* @layer base {
+  body { */
+    /* Apply font-smoothing for better text rendering */
+    /* -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale; */
+
+    /* Base background/text colors applied directly in layout.tsx or components */
+    /* Example: You might set a default background/text color fallback here,
+       but it's often better handled in layout.tsx body className */
+    /* background-color: #FFFFFF; /* Example fallback */
+    /* color: #1A202C;       /* Example fallback */
+  /* } */
+
+  /* You can add other base resets or styles here */
+/* } */
+
+/* Component layer is now mostly empty. 
+  We will style components directly using Tailwind utilities in their TSX files.
+  You could define very generic base component styles here if absolutely necessary,
+  but prefer utility classes for flexibility.
+*/
+@layer components {
+  /* Example: maybe a very basic button reset if needed */
+  /* .btn { */
+  /* @apply focus:outline-none focus:ring-2 focus:ring-offset-2; */
+  /* } */
+}
+
+/* Utility layer is generally for adding custom utility classes, 
+  which we aren't doing much of with this simpler approach.
+*/
+@layer utilities {
+  /* Example: If you needed a custom utility */
+  /* .content-auto { */
+  /* content-visibility: auto; */
+  /* } */
+}
+
