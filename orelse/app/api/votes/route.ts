@@ -1,9 +1,11 @@
 // app/api/votes/route.ts
 import { getServerSession } from 'next-auth/next';
+import type { Session } from 'next-auth'; // Import Session type
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import prisma from '@/src/lib/prisma';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { GoalStatus } from '@prisma/client'; // Import GoalStatus
 
 const castVoteSchema = z.object({
   elseActionId: z.string().cuid({ message: "Invalid ElseAction ID." }),
@@ -11,13 +13,14 @@ const castVoteSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session: Session | null = await getServerSession(authOptions); // Typed session
 
-    if (!session || !session.user || !(session.user as any).id) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    // Use augmented session.user.id
+    if (!session || !session.user || !session.user.id) {
+      return NextResponse.json({ error: 'Not authenticated or user ID missing' }, { status: 401 });
     }
 
-    const voterId = (session.user as any).id;
+    const voterId = session.user.id; // Type-safe
     const body = await request.json();
 
     const validation = castVoteSchema.safeParse(body);
@@ -27,12 +30,11 @@ export async function POST(request: Request) {
 
     const { elseActionId } = validation.data;
 
-    // Check if the ElseAction exists and its parent Goal is active
     const elseAction = await prisma.elseAction.findUnique({
       where: { id: elseActionId },
-      select: { 
+      select: {
         goalId: true,
-        goal: { select: { status: true, authorId: true } } // Also fetch goal's authorId
+        goal: { select: { status: true, authorId: true } }
       },
     });
 
@@ -40,19 +42,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Suggestion not found.' }, { status: 404 });
     }
 
-    if (elseAction.goal.status !== 'ACTIVE') {
+    if (elseAction.goal.status !== GoalStatus.ACTIVE) { // Use imported GoalStatus
       return NextResponse.json({ error: 'Voting is only allowed on suggestions for active goals.' }, { status: 400 });
     }
 
-    // Optional: Prevent goal author from voting on suggestions for their own goal
+    // Optional: Prevent goal author from voting (uncomment if needed)
     // if (elseAction.goal.authorId === voterId) {
     //   return NextResponse.json({ error: "You cannot vote on suggestions for your own goal." }, { status: 403 });
     // }
 
-    // Perform the vote creation and voteCount update in a transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Attempt to create the vote
-      // This will fail if the unique constraint (userId, elseActionId) is violated (user already voted)
       const newVote = await tx.userElseActionVote.create({
         data: {
           userId: voterId,
@@ -60,7 +59,6 @@ export async function POST(request: Request) {
         },
       });
 
-      // 2. If vote creation was successful, increment the voteCount on the ElseAction
       const updatedElseAction = await tx.elseAction.update({
         where: { id: elseActionId },
         data: {
@@ -68,30 +66,37 @@ export async function POST(request: Request) {
             increment: 1,
           },
         },
-        select: { voteCount: true } // Only select the new vote count
+        select: { voteCount: true }
       });
 
       return { newVote, updatedVoteCount: updatedElseAction.voteCount };
     });
 
     return NextResponse.json(
-        { 
-            message: 'Vote cast successfully!', 
-            vote: result.newVote, 
-            newVoteCount: result.updatedVoteCount 
-        }, 
+        {
+            message: 'Vote cast successfully!',
+            vote: result.newVote,
+            newVoteCount: result.updatedVoteCount
+        },
         { status: 201 }
     );
 
-  } catch (error: any) {
+  } catch (error: unknown) { // Typed error as unknown
     console.error('Error casting vote:', error);
-    if (error.code === 'P2002' && error.meta?.target?.includes('userId') && error.meta?.target?.includes('elseActionId')) {
-      // Unique constraint violation (user already voted for this suggestion)
-      return NextResponse.json({ error: 'You have already voted for this suggestion.' }, { status: 409 }); // 409 Conflict
+
+    // Check for Prisma unique constraint violation (P2002)
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      const prismaError = error as { code: string; meta?: { target?: string[] } };
+      if (prismaError.meta?.target?.includes('userId') && prismaError.meta?.target?.includes('elseActionId')) {
+        return NextResponse.json({ error: 'You have already voted for this suggestion.' }, { status: 409 });
+      }
     }
+    
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid input.', issues: error.issues }, { status: 400 });
     }
-    return NextResponse.json({ error: 'An error occurred while casting the vote.' }, { status: 500 });
+    
+    const message = error instanceof Error ? error.message : "An unknown error occurred";
+    return NextResponse.json({ error: `An error occurred while casting the vote: ${message}` }, { status: 500 });
   }
 }

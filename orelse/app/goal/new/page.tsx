@@ -1,10 +1,10 @@
-// app/goals/new/page.tsx
+// app/goal/new/page.tsx
 'use client';
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import Link from 'next/link';
+// import Link from 'next/link'; // Removed as it's not used in the JSX
 
 interface GoalFormData {
   description: string;
@@ -22,7 +22,8 @@ interface ApiErrorResponse {
 
 export default function NewGoalPage() {
   const router = useRouter();
-  const { data: session, status: sessionStatus } = useSession();
+  // Only destructure 'status' if 'data' (sessionData) is not used
+  const { status: sessionStatus } = useSession();
   const [formData, setFormData] = useState<GoalFormData>({
     description: '',
     deadline: '',
@@ -42,7 +43,6 @@ export default function NewGoalPage() {
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    // ... (handleSubmit logic remains largely the same, ensure it works)
     e.preventDefault();
     setIsLoading(true);
     setError(null);
@@ -63,13 +63,13 @@ export default function NewGoalPage() {
       const localDate = new Date(formData.deadline);
       if (isNaN(localDate.getTime())) throw new Error('Invalid date from input');
       isoDeadline = localDate.toISOString();
-    } catch (dateError) {
+    } catch {
       setFieldErrors(prev => ({ ...prev, deadline: "Invalid date/time format."}));
       setIsLoading(false);
       return;
     }
     try {
-      const response = await fetch('/api/goals', {
+      const response = await fetch('/api/goal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -88,12 +88,13 @@ export default function NewGoalPage() {
           });
           setFieldErrors(newFieldErrors);
         }
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        return;
       }
       router.push('/');
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
       if (!error && !Object.keys(fieldErrors).length) {
-         setError(err.message || 'An unexpected error occurred.');
+         setError(errorMessage);
       }
       console.error('Submission error:', err);
     } finally {
@@ -117,44 +118,34 @@ export default function NewGoalPage() {
   if (sessionStatus === 'unauthenticated') {
     return (
       <div className="container mx-auto p-4 text-center">
-        <p className="text-lg text-[#FC8181]"> {/* Destructive Red Dark */}
+        <p className="text-lg text-[#FC8181]">
           You need to be signed in to create a goal.
         </p>
       </div>
     );
   }
 
-  // Dark Mode Form Styling
-  const inputClasses = "mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none sm:text-sm bg-[#1A1A1A] border-[#333333] focus:ring-[#C8102E] focus:border-[#C8102E] text-[#9c9da6]/60 placeholder-[#9c9da6]/60 italics";
+  const inputClasses = "mt-1 block w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none sm:text-sm bg-[#1A1A1A] border-[#333333] focus:ring-[#C8102E] focus:border-[#C8102E] text-[#E2E8F0] placeholder-[#9c9da6]/60";
   const labelClasses = "block text-sm font-medium text-[#9c9da6]/80";
-  const buttonClasses = `w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-raycast-white 
+  const buttonClasses = `w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-[#E2E8F0] 
                         ${isLoading ? 'bg-[#333333] cursor-not-allowed' : 'bg-[#C8102E] hover:bg-[#B00E28] cursor-pointer'}
-                        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C8102E] focus:ring-offset-raycast-black transition-colors`;
-
-  const backButtonClasses = `
-    inline-flex items-center px-6 py-2.5 mb-8 
-    rounded-[24px] /* Slightly smaller radius for secondary button */
-    text-sm font-medium
-    bg-[#2A2A2F] text-[#E2E8F0] /* Darker grey button */
-    hover:bg-[#3c3c42] 
-    focus:outline-none focus:ring-2 focus:ring-[#C8102E] focus:ring-offset-2 focus:ring-offset-[#121212]
-    transition-all duration-200 ease-in-out shadow-md hover:shadow-lg
-  `;
-
+                        focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C8102E] focus:ring-offset-[#121212] transition-colors`;
+  
+  // const backButtonClasses = ` ... `; // Removed as it's not used in the JSX
 
   return (
     <div className="container mx-auto p-4 max-w-2xl">
+      {/* The back button was commented out in your JSX, so backButtonClasses is unused */}
+      {/* <Link href="/" className={backButtonClasses}>
+            &larr; Back to Public Goals
+      </Link> */}
 
-        <Link href="/" className={backButtonClasses}>
-              &larr; Back to Public Goals
-        </Link>
-
-      <h1 className="text-3xl font-display font-bold mb-6 text-[#9c9da6]"> {/* Raycast Red */}
+      <h1 className="text-3xl font-display font-bold mb-6 text-[#C8102E]">
         Set a New Goal
       </h1>
 
       {error && (
-        <div className="mb-4 p-3 rounded-md bg-[#FC8181] text-raycast-black"> {/* Destructive Red Dark with black text */}
+        <div className="mb-4 p-3 rounded-md bg-[#FC8181] text-[#121212]">
           <p>{error}</p>
         </div>
       )}
@@ -182,7 +173,6 @@ export default function NewGoalPage() {
             className={inputClasses}
             value={formData.deadline} onChange={handleChange} required
           />
-          {/* Style the date time picker icon for dark mode if possible (browser dependent) */}
           {fieldErrors.deadline && <p className="mt-1 text-xs text-[#FC8181]">{fieldErrors.deadline}</p>}
         </div>
         

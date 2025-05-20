@@ -6,7 +6,7 @@ import AuthButtons from './AuthButtons';
 import { useSession } from 'next-auth/react'; // Import useSession
 
 export default function Navbar() {
-  const { data: session, status } = useSession(); // Get session status
+  const { status } = useSession(); // Get session status
 
   const navLinkClasses = "text-sm font-medium text-[#A0AEC0] hover:text-[#E2E8F0] transition-colors px-3 py-2 rounded-md";
 

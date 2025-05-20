@@ -1,37 +1,34 @@
 // app/api/stripe/checkout-session/route.ts
 import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'; // Adjust path if your authOptions is elsewhere
+import type { Session } from 'next-auth';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import prisma from '@/src/lib/prisma';
 import { NextResponse } from 'next/server';
 import { Stripe } from 'stripe';
 import { z } from 'zod';
 
-// Ensure STRIPE_SECRET_KEY is set
 if (!process.env.STRIPE_SECRET_KEY) {
   console.error('*** STRIPE_SECRET_KEY is not set in .env. Stripe functionality will fail. ***');
-  // You might throw an error here during server startup in a real app,
-  // but for an API route, we'll log and it will fail at runtime if used.
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { // Added || '' to satisfy TS if key is missing, though it will fail
-  apiVersion: '2025-04-30.basil', // Use the required API version
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
+  apiVersion: '2025-04-30.basil',
   typescript: true,
 });
 
 const createCheckoutSessionSchema = z.object({
   priceId: z.string().startsWith('price_', { message: "Invalid Price ID." }),
-  // quantity is typically 1 for a subscription
 });
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session: Session | null = await getServerSession(authOptions);
 
-    if (!session || !session.user || !(session.user as any).id) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    if (!session || !session.user || !session.user.id) {
+      return NextResponse.json({ error: 'Not authenticated or user ID missing' }, { status: 401 });
     }
 
-    const userId = (session.user as any).id;
+    const userId = session.user.id;
     const userEmail = session.user.email;
 
     if (!userEmail) {
@@ -47,31 +44,28 @@ export async function POST(request: Request) {
 
     const { priceId } = validation.data;
 
-    // Get or create a Stripe Customer ID for the user
-    let userRecord = await prisma.user.findUnique({ where: { id: userId } });
-    
-    if (!userRecord) { // Should not happen if session.user.id is valid
+    const userRecord = await prisma.user.findUnique({ where: { id: userId } }); // Changed to const
+
+    if (!userRecord) {
         return NextResponse.json({ error: 'User not found in database.' }, { status: 404 });
     }
 
-    let stripeCustomerId = userRecord.stripeCustomerId;
+    let stripeCustomerId = userRecord.stripeCustomerId; // This might be null
 
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
         email: userEmail,
         name: session.user.name || undefined,
-        metadata: {
-          userId: userId, 
-        },
+        metadata: { userId: userId },
       });
       stripeCustomerId = customer.id;
-      
-      userRecord = await prisma.user.update({ // Re-assign userRecord to get the updated value
+
+      await prisma.user.update({
         where: { id: userId },
         data: { stripeCustomerId: stripeCustomerId },
       });
     }
-    
+
     const appUrl = process.env.NEXT_PUBLIC_APP_URL;
     if (!appUrl) {
         console.error("NEXT_PUBLIC_APP_URL is not set in .env");
@@ -79,30 +73,18 @@ export async function POST(request: Request) {
     }
 
     const successUrl = `${appUrl}/my-goals?stripe_session_id={CHECKOUT_SESSION_ID}&status=success`;
-    const cancelUrl = `${appUrl}/my-goals?status=canceled`; // Or a dedicated /subscribe?status=canceled page
+    const cancelUrl = `${appUrl}/my-goals?status=canceled`;
 
     const stripeSessionParams: Stripe.Checkout.SessionCreateParams = {
-      customer: stripeCustomerId,
+      customer: stripeCustomerId!, // Assert stripeCustomerId is not null here, as it's created if it was null
       payment_method_types: ['card'],
-      line_items: [
-        {
-          price: priceId,
-          quantity: 1,
-        },
-      ],
+      line_items: [{ price: priceId, quantity: 1 }],
       mode: 'subscription',
       allow_promotion_codes: true,
-      subscription_data: {
-        metadata: {
-            userId: userId 
-        }
-        // trial_period_days: 7, // Example: if you want to add a 7-day trial
-      },
+      subscription_data: { metadata: { userId: userId } },
       success_url: successUrl,
       cancel_url: cancelUrl,
-      metadata: { // Add userId to the checkout session metadata too
-        userId: userId,
-      }
+      metadata: { userId: userId }
     };
 
     const stripeCheckoutSession = await stripe.checkout.sessions.create(stripeSessionParams);
@@ -113,12 +95,17 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ sessionId: stripeCheckoutSession.id, checkoutUrl: stripeCheckoutSession.url });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Stripe Checkout session creation error:', error);
-    // It's good to check the type of error for more specific messages
-    if (error.type === 'StripeCardError') {
-        return NextResponse.json({ error: `Stripe Card Error: ${error.message}` }, { status: 400 });
+    if (typeof error === 'object' && error !== null && 'type' in error && typeof error.type === 'string') {
+        const stripeError = error as { type: string; message?: string; code?:string; statusCode?: number };
+        if (stripeError.type === 'StripeCardError') {
+             return NextResponse.json({ error: `Stripe Card Error: ${stripeError.message || 'Unknown card error'}` }, { status: stripeError.statusCode || 400 });
+        }
+        return NextResponse.json({ error: stripeError.message || 'A Stripe error occurred.' }, { status: stripeError.statusCode || 500 });
+    } else if (error instanceof Error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ error: error.message || 'An error occurred while creating the checkout session.' }, { status: 500 });
+    return NextResponse.json({ error: 'An unexpected error occurred while creating the checkout session.' }, { status: 500 });
   }
 }

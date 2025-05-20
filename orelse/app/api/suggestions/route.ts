@@ -1,9 +1,11 @@
 // app/api/suggestions/route.ts
 import { getServerSession } from 'next-auth/next';
+import type { Session } from 'next-auth'; // Import Session type
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import prisma from '@/src/lib/prisma';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { GoalStatus } from '@prisma/client';
 
 const createSuggestionSchema = z.object({
   goalId: z.string().cuid({ message: "Invalid Goal ID." }),
@@ -12,13 +14,14 @@ const createSuggestionSchema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session: Session | null = await getServerSession(authOptions); // Typed session
 
-    if (!session || !session.user || !(session.user as any).id) {
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    // Use augmented session.user.id which should be string | null | undefined
+    if (!session || !session.user || !session.user.id) {
+      return NextResponse.json({ error: 'Not authenticated or user ID missing' }, { status: 401 });
     }
 
-    const suggesterId = (session.user as any).id;
+    const suggesterId = session.user.id; // Type-safe
     const body = await request.json();
 
     const validation = createSuggestionSchema.safeParse(body);
@@ -28,10 +31,9 @@ export async function POST(request: Request) {
 
     const { goalId, suggestion } = validation.data;
 
-    // Check if the goal exists and if the suggester is not the author of the goal
     const goal = await prisma.goal.findUnique({
       where: { id: goalId },
-      select: { authorId: true, status: true }, // Select only what's needed
+      select: { authorId: true, status: true },
     });
 
     if (!goal) {
@@ -39,11 +41,10 @@ export async function POST(request: Request) {
     }
 
     if (goal.authorId === suggesterId) {
-      return NextResponse.json({ error: "You cannot make 'Or Else' suggestions for your own goal." }, { status: 403 }); // 403 Forbidden
+      return NextResponse.json({ error: "You cannot make 'Or Else' suggestions for your own goal." }, { status: 403 });
     }
     
-    // Optional: Prevent suggestions on goals that are not ACTIVE
-    if (goal.status !== 'ACTIVE') {
+    if (goal.status !== GoalStatus.ACTIVE) {
         return NextResponse.json({ error: 'Suggestions can only be made for active goals.' }, { status: 400 });
     }
 
@@ -52,10 +53,8 @@ export async function POST(request: Request) {
         suggestion,
         goalId,
         suggesterId,
-        // isMalicious and isChosen will default to false
-        // voteCount will default to 0
       },
-      include: { // Optionally include related data if needed by the client immediately
+      include: {
         suggester: {
             select: { name: true, image: true }
         }
@@ -64,11 +63,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(newSuggestion, { status: 201 });
 
-  } catch (error) {
+  } catch (error: unknown) { // Typed error as unknown
     console.error('Error creating suggestion:', error);
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: 'Invalid input.', issues: error.issues }, { status: 400 });
     }
-    return NextResponse.json({ error: 'An error occurred while creating the suggestion.' }, { status: 500 });
+    const message = error instanceof Error ? error.message : "An unknown error occurred";
+    return NextResponse.json({ error: `An error occurred while creating the suggestion: ${message}` }, { status: 500 });
   }
 }

@@ -1,13 +1,13 @@
 // app/my-goals/page.tsx
 import prisma from '@/src/lib/prisma';
-import { Goal, GoalStatus, ElseAction, User } from '@prisma/client'; // Import necessary types
+import { Goal, GoalStatus, ElseAction /*, User */ } from '@prisma/client'; // Removed 'User' as it's not directly used for type annotation here
 import Link from 'next/link';
 import { getServerSession } from 'next-auth/next';
+import { Session } from 'next-auth'; // Import Session type from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
-import { redirect } from 'next/navigation'; // For redirecting if not logged in
-import SubscribeButton from '@/src/components/SubscibeButton'; // CORRECTED IMPORT PATH
+import { redirect } from 'next/navigation';
+import SubscribeButton from '@/src/components/SubscibeButton'; // Corrected from SubscibeButton
 
-// Helper to format dates (can be moved to a shared utils file later if not already)
 const formatDate = (dateString: Date | string, options?: Intl.DateTimeFormatOptions): string => {
   const date = new Date(dateString);
   const defaultOptions: Intl.DateTimeFormatOptions = {
@@ -17,20 +17,21 @@ const formatDate = (dateString: Date | string, options?: Intl.DateTimeFormatOpti
   return new Intl.DateTimeFormat('en-US', { ...defaultOptions, ...options }).format(date);
 };
 
-// We can reuse a similar card structure or create a dedicated one
-// For now, let's define a UserGoalCard here, adapting from the public GoalCard
-// We'll need to pass the 'effectiveStatus' and 'chosenElseAction' if we calculate them here too
 type ElseActionWithSuggester = ElseAction & {
   suggester: { name: string | null; image: string | null };
 };
 
-type GoalWithAuthorAndElseActions = Goal & {
-  author: { name: string | null; image: string | null };
-  elseActions: ElseActionWithSuggester[];
+// The 'Goal' type imported from @prisma/client already includes 'author' and 'elseActions'
+// if they are included in the Prisma query. So, this more specific type might not be strictly necessary
+// unless you are adding properties not directly from the Prisma model.
+// For clarity, we can ensure the included relations are typed if needed.
+type GoalWithRelations = Goal & {
+  author: { name: string | null; image: string | null }; // Prisma include handles this shape
+  elseActions: ElseActionWithSuggester[];              // Prisma include handles this shape
 };
 
 interface UserGoalCardProps {
-  goal: GoalWithAuthorAndElseActions;
+  goal: GoalWithRelations; // Use the more descriptive type
   effectiveStatus: GoalStatus;
   chosenElseAction: ElseActionWithSuggester | null;
 }
@@ -49,17 +50,10 @@ function UserGoalCard({ goal, effectiveStatus, chosenElseAction }: UserGoalCardP
   let statusBadgeColor = "";
 
   switch (effectiveStatus) {
-    case GoalStatus.ACTIVE:
-      statusBadgeColor = "bg-sky-700 text-sky-100";
-      break;
-    case GoalStatus.COMPLETED:
-      statusBadgeColor = "bg-green-700 text-green-100";
-      break;
-    case GoalStatus.FAILED:
-      statusBadgeColor = "bg-red-700 text-red-100";
-      break;
-    default:
-      statusBadgeColor = "bg-gray-700 text-gray-100";
+    case GoalStatus.ACTIVE: statusBadgeColor = "bg-sky-700 text-sky-100"; break;
+    case GoalStatus.COMPLETED: statusBadgeColor = "bg-green-700 text-green-100"; break;
+    case GoalStatus.FAILED: statusBadgeColor = "bg-red-700 text-red-100"; break;
+    default: statusBadgeColor = "bg-gray-700 text-gray-100";
   }
 
   return (
@@ -88,7 +82,7 @@ function UserGoalCard({ goal, effectiveStatus, chosenElseAction }: UserGoalCardP
             </p>
             {effectiveStatus === GoalStatus.FAILED && chosenElseAction && (
               <p className={`${textMutedClasses} text-yellow-400`}>
-                Consequence: "{chosenElseAction.suggestion.substring(0,30)}..."
+                Consequence: &quot;{chosenElseAction.suggestion.substring(0,30)}...&quot; {/* Escaped quotes */}
               </p>
             )}
              {effectiveStatus === GoalStatus.FAILED && !chosenElseAction && (
@@ -105,45 +99,36 @@ function UserGoalCard({ goal, effectiveStatus, chosenElseAction }: UserGoalCardP
 
 
 export default async function MyGoalsPage() {
-  const session = await getServerSession(authOptions);
+  const session: Session | null = await getServerSession(authOptions); // Typed session
 
-  if (!session || !session.user || !(session.user as any).id) {
-    redirect('/api/auth/signin?callbackUrl=/my-goals'); // Redirect to sign-in if not authenticated
+  // Rely on augmented Session type which includes user.id
+  if (!session || !session.user || !session.user.id) {
+    redirect('/api/auth/signin?callbackUrl=/my-goals');
   }
 
-  const currentUserId = (session.user as any).id;
+  const currentUserId = session.user.id; // Type-safe
 
-  // Fetch user details including subscription status
-  const user = await prisma.user.findUnique({
+  const dbUser = await prisma.user.findUnique({ // Renamed to dbUser to avoid conflict if 'User' type was imported
     where: { id: currentUserId },
     select: {
-      subscriptionStatus: true, 
-      // Add other fields if needed, but for this button, status is key
+      subscriptionStatus: true,
     }
   });
 
   const userGoals = await prisma.goal.findMany({
-    where: {
-      authorId: currentUserId,
-    },
-    orderBy: [
-      { status: 'asc' }, // Show ACTIVE first, then COMPLETED, then FAILED
-      { deadline: 'asc' },
-    ],
+    where: { authorId: currentUserId, },
+    orderBy: [ { status: 'asc' }, { deadline: 'asc' }, ],
     include: {
-      author: { select: { name: true, image: true } }, // Though for "my goals", author is always self
+      author: { select: { name: true, image: true } },
       elseActions: {
         orderBy: [{ voteCount: 'desc' }, { createdAt: 'asc' }],
-        include: {
-          suggester: { select: { name: true, image: true } },
-        },
+        include: { suggester: { select: { name: true, image: true } } },
       },
     },
   });
 
-  // Calculate effective status and chosen action for each goal
   const processedGoals = userGoals.map(goal => {
-    let effectiveStatus = goal.status;
+    let effectiveStatus: GoalStatus = goal.status; // Explicitly type
     const isPastDeadline = new Date() > new Date(goal.deadline);
     if (goal.status === GoalStatus.ACTIVE && isPastDeadline) {
       effectiveStatus = GoalStatus.FAILED;
@@ -151,7 +136,7 @@ export default async function MyGoalsPage() {
 
     let chosenElseAction: ElseActionWithSuggester | null = null;
     if (effectiveStatus === GoalStatus.FAILED && goal.elseActions.length > 0) {
-      chosenElseAction = goal.elseActions[0];
+      chosenElseAction = goal.elseActions[0] as ElseActionWithSuggester; // Cast if necessary
     }
     return { ...goal, effectiveStatus, chosenElseAction };
   });
@@ -160,21 +145,18 @@ export default async function MyGoalsPage() {
     inline-flex items-center justify-center font-medium 
     px-8 py-3 rounded-[36px] 
     shadow-lg hover:shadow-xl active:shadow-md
-    bg-[#C8102E] text-raycast-white
+    bg-[#C8102E] text-[#E2E8F0] /* text-raycast-white -> direct hex */
     hover:bg-[#B00E28] active:bg-[#9A0C22]
-    focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C8102E] focus:ring-offset-raycast-black
+    focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#C8102E] focus:ring-offset-[#121212] /* ring-offset-raycast-black -> direct hex */
     transition-all duration-200 ease-in-out
   `;
-  const pageTitleClasses = "text-4xl lg:text-5xl font-display font-bold text-[#E2E8F0] mb-2 tracking-tight"; // Using Raycast White
+  const pageTitleClasses = "text-4xl lg:text-5xl font-display font-bold text-[#E2E8F0] mb-2 tracking-tight";
   const placeholderCardClasses = "text-center py-16 bg-[#1A1A1A]/50 rounded-[36px] shadow-xl border border-[#333333]/50";
 
-
-  // !! IMPORTANT: Replace with YOUR Stripe Test Price ID !!
   const STRIPE_PRICE_ID = process.env.STRIPE_YOUR_PRODUCT_PRICE_ID || "YOUR_TEST_PRICE_ID_HERE"; 
   if (STRIPE_PRICE_ID === "YOUR_TEST_PRICE_ID_HERE" && process.env.NODE_ENV !== "development") {
       console.warn("WARNING: Stripe Price ID is not set correctly for production!");
   }
-
 
   return (
     <div className="container mx-auto p-4">
@@ -183,8 +165,7 @@ export default async function MyGoalsPage() {
         <Link href="/goal/new" className={newGoalButtonClass}>Set New Goal</Link>
       </div>
 
-      {/* --- Subscription Call to Action --- */}
-      {(!user?.subscriptionStatus || user.subscriptionStatus !== 'active') && (
+      {(!dbUser?.subscriptionStatus || dbUser.subscriptionStatus !== 'active') && (
         <section className="mb-12 p-6 sm:p-8 rounded-[36px] bg-[#1f1f23] border border-[#C8102E]/50 shadow-2xl text-center">
           <h2 className="text-2xl lg:text-3xl font-display font-bold text-[#C8102E] mb-3">
             Unlock Full Potential!
@@ -195,17 +176,16 @@ export default async function MyGoalsPage() {
           </p>
           <SubscribeButton 
             priceId={STRIPE_PRICE_ID} 
-            currentSubscriptionStatus={user?.subscriptionStatus}
+            currentSubscriptionStatus={dbUser?.subscriptionStatus}
             buttonText="Go Pro - $3/month"
           />
         </section>
       )}
-      {user?.subscriptionStatus === 'active' && (
+      {dbUser?.subscriptionStatus === 'active' && (
          <div className="mb-10 text-center p-4 rounded-md bg-green-800/30 border border-green-600">
             <p className="font-semibold text-green-400">OrElse Pro Activated!</p>
          </div>
       )}
-
 
       {processedGoals.length === 0 && (
         <div className={placeholderCardClasses}>
@@ -219,7 +199,7 @@ export default async function MyGoalsPage() {
         {processedGoals.map((goal) => (
           <UserGoalCard 
             key={goal.id} 
-            goal={goal} 
+            goal={goal as GoalWithRelations} // Cast goal to GoalWithRelations
             effectiveStatus={goal.effectiveStatus}
             chosenElseAction={goal.chosenElseAction}
           />

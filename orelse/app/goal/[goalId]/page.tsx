@@ -1,9 +1,11 @@
 // app/goal/[goalId]/page.tsx
 import prisma from '@/src/lib/prisma';
-import { Goal, User, ElseAction, GoalStatus } from '@prisma/client';
+import { ElseAction, GoalStatus } from '@prisma/client'; // GoalStatus is already here
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { getServerSession } from 'next-auth/next';
+import type { Session } from 'next-auth'; // CORRECTED: Import Session type from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import SuggestionForm from './SuggestionForm';
 import VoteButton from './VoteButton';
@@ -32,16 +34,18 @@ interface GoalPageProps {
 }
 
 export default async function GoalPage({ params }: GoalPageProps) {
-  const { goalId } = params;
-  const session = await getServerSession(authOptions);
-  const currentUserId = (session?.user as any)?.id || null;
+  const goalId = params.goalId;
+  const session: Session | null = await getServerSession(authOptions); // Use the imported Session type
 
-  const goalData = await prisma.goal.findUnique({ // Renamed to goalData to avoid conflict
+  const typedUser = session?.user as { id?: string | null; name?: string | null; email?: string | null; image?: string | null };
+  const currentUserId = typedUser?.id || null;
+
+  const goalData = await prisma.goal.findUnique({
     where: { id: goalId, isPublic: true },
     include: {
       author: { select: { id: true, name: true, image: true } },
       elseActions: {
-        orderBy: [{ voteCount: 'desc' }, { createdAt: 'asc' }], // Highest votes, then oldest for tie-breaking
+        orderBy: [{ voteCount: 'desc' }, { createdAt: 'asc' }],
         include: {
           suggester: { select: { name: true, image: true } },
         },
@@ -54,9 +58,7 @@ export default async function GoalPage({ params }: GoalPageProps) {
   }
 
   const isAuthor = currentUserId === goalData.authorId;
-  
-  // Determine goal's effective status (considering deadline)
-  let effectiveStatus = goalData.status;
+  let effectiveStatus: GoalStatus = goalData.status; // Explicitly type effectiveStatus
   const isPastDeadline = new Date() > new Date(goalData.deadline);
 
   if (goalData.status === GoalStatus.ACTIVE && isPastDeadline) {
@@ -65,12 +67,9 @@ export default async function GoalPage({ params }: GoalPageProps) {
 
   const canSuggest = session && currentUserId && currentUserId !== goalData.authorId && effectiveStatus === GoalStatus.ACTIVE;
 
-
-  // Find the chosen "Or Else" action if the goal has effectively FAILED
   let chosenElseAction: ElseActionWithSuggesterAndVoteCount | null = null;
   if (effectiveStatus === GoalStatus.FAILED && goalData.elseActions.length > 0) {
-    // The first one in the sorted list (by voteCount desc, createdAt asc) is the winner
-    chosenElseAction = goalData.elseActions[0];
+    chosenElseAction = goalData.elseActions[0] as ElseActionWithSuggesterAndVoteCount;
   }
 
   // --- Styling Constants ---
@@ -92,11 +91,8 @@ export default async function GoalPage({ params }: GoalPageProps) {
   const suggesterInfoClasses = "text-xs text-[#9c9da6]/80 mt-2 flex items-center space-x-2";
   const suggesterImageClasses = "w-6 h-6 rounded-full";
   const placeholderTextClasses = "italic text-[#9c9da6]/60";
-
-  // Specific styles for FAILED goal state and chosen suggestion
   const failedBannerClasses = "p-6 rounded-[24px] bg-red-800/80 border border-red-700/60 shadow-xl backdrop-blur-md text-center mb-8";
   const chosenSuggestionCardClasses = "p-6 bg-yellow-500/10 border-2 border-yellow-500 rounded-[24px] shadow-xl text-center";
-
 
   return (
     <div className={pageContainerClasses}>
@@ -104,7 +100,6 @@ export default async function GoalPage({ params }: GoalPageProps) {
         &larr; Back to Public Goals
       </Link>
 
-      {/* --- Display FAILED Goal Banner and Chosen Suggestion --- */}
       {effectiveStatus === GoalStatus.FAILED && (
         <section className={failedBannerClasses}>
           <h2 className="text-3xl font-display font-bold text-yellow-400 mb-3">Goal Not Achieved!</h2>
@@ -112,35 +107,33 @@ export default async function GoalPage({ params }: GoalPageProps) {
           {chosenElseAction ? (
             <div className={chosenSuggestionCardClasses}>
               <p className="text-lg text-yellow-300 mb-1">The community has decided... You must:</p>
-              <p className="text-2xl font-semibold text-yellow-200 mb-2">"{chosenElseAction.suggestion}"</p>
+              <p className="text-2xl font-semibold text-yellow-200 mb-2">&quot;{chosenElseAction.suggestion}&quot;</p>
               <p className="text-sm text-yellow-400/80">
                 (Suggested by {chosenElseAction.suggester.name || 'Someone'} with {chosenElseAction.voteCount} votes)
               </p>
             </div>
           ) : (
-            <p className="text-lg text-yellow-300">No "Or Else" suggestions were made for this goal.</p>
+            <p className="text-lg text-yellow-300">No &quot;Or Else&quot; suggestions were made for this goal.</p>
           )}
         </section>
       )}
 
-      {/* --- Goal Details Section --- */}
       <section className={sectionCardClasses}>
         <h1 className={mainGoalTitleClasses}>{goalData.description || 'Untitled Goal'}</h1>
         <div className={metaInfoContainerClasses}>
-          {/* ... author, deadline, status, created ... */}
           <div className={authorInfoClasses}>
-            {goalData.author.image && (<img src={goalData.author.image} alt={goalData.author.name || 'Author'} className={authorImageClasses} />)}
+            {goalData.author.image && (
+              <Image src={goalData.author.image} alt={goalData.author.name || 'Author'} width={40} height={40} className={authorImageClasses} />
+            )}
             <div><p className={metaTextLabelClasses}>Set by</p><p className={authorNameClasses}>{goalData.author.name || 'Anonymous User'}</p></div>
           </div>
           <div><span className={metaTextLabelClasses}>Deadline: </span><span className={metaTextValueClasses}>{formatDate(goalData.deadline)}</span></div>
           <div><span className={`${metaTextLabelClasses} capitalize`}>Effective Status: </span><span className={`${metaTextValueClasses} font-semibold`}>{effectiveStatus.toLowerCase()}</span></div>
           {goalData.createdAt && (<div><span className={metaTextLabelClasses}>Created: </span><span className={metaTextValueClasses}>{formatDate(goalData.createdAt, { month: 'short', day: 'numeric', year: 'numeric' })}</span></div>)}
         </div>
-        
         {isAuthor && effectiveStatus === GoalStatus.ACTIVE && (
           <MarkCompleteButton goalId={goalData.id} currentStatus={effectiveStatus} />
         )}
-        
         {goalData.description && (
           <div className="mt-6 pt-6 border-t border-[#333333]/60">
             <h2 className={challengeTitleClasses}>The Challenge</h2>
@@ -149,25 +142,24 @@ export default async function GoalPage({ params }: GoalPageProps) {
         )}
       </section>
 
-      {/* --- "Or Else..." Suggestions Section (Show if not COMPLETED and not FAILED where a choice is made) --- */}
       {effectiveStatus !== GoalStatus.COMPLETED && !(effectiveStatus === GoalStatus.FAILED && chosenElseAction) && (
         <section className="mt-12">
-          <h2 className={sectionTitleClasses}>"Or Else..." Suggestions</h2>
-          {/* ... SuggestionForm and conditional messages ... */}
+          <h2 className={sectionTitleClasses}>&quot;Or Else...&quot; Suggestions</h2>
           {canSuggest && (<div className="my-8"><SuggestionForm goalId={goalData.id} /></div>)}
           {!session && effectiveStatus === GoalStatus.ACTIVE && (
             <p className={`mb-6 ${placeholderTextClasses}`}><Link href="/api/auth/signin" className="text-[#C8102E] hover:underline font-semibold">Sign in</Link> to make a suggestion or vote.</p>
           )}
           {session && currentUserId === goalData.authorId && effectiveStatus === GoalStatus.ACTIVE && (
-            <p className={`mb-6 text-sm ${placeholderTextClasses}`}>You can't make suggestions for your own goal.</p>
+            <p className={`mb-6 text-sm ${placeholderTextClasses}`}>You can&apos;t make suggestions for your own goal.</p>
           )}
+          {/* CORRECTED CONDITION for "Suggestions and voting are closed" message */}
           {effectiveStatus === GoalStatus.FAILED && (
-            <p className={`mb-6 text-sm ${placeholderTextClasses}`}>Suggestions and voting are closed as this goal's status is {effectiveStatus.toLowerCase()}.</p>
+            <p className={`mb-6 text-sm ${placeholderTextClasses}`}>Suggestions and voting are closed as this goal&apos;s status is {effectiveStatus.toLowerCase()}.</p>
           )}
 
           <div className="space-y-4 lg:space-y-5">
             {goalData.elseActions.length === 0 ? (
-              effectiveStatus === GoalStatus.ACTIVE && (
+              effectiveStatus === GoalStatus.ACTIVE && ( // Only show "No suggestions yet" if goal is active and no suggestions
                 <div className={`${sectionCardClasses.replace('mt-8', 'mt-0')} text-center py-10`}>
                   <p className={placeholderTextClasses}>No suggestions yet.{canSuggest && " Why not add one above?"}{!session && " Sign in to be the first!"}</p>
                 </div>
@@ -177,7 +169,9 @@ export default async function GoalPage({ params }: GoalPageProps) {
                 <div key={action.id} className={suggestionCardClasses}>
                   <p className={suggestionTextClasses}>{action.suggestion}</p>
                   <div className={suggesterInfoClasses}>
-                    {action.suggester.image && (<img src={action.suggester.image} alt={action.suggester.name || ''} className={suggesterImageClasses} />)}
+                    {action.suggester.image && (
+                      <Image src={action.suggester.image} alt={action.suggester.name || ''} width={24} height={24} className={suggesterImageClasses} />
+                    )}
                     <span>{action.suggester.name || 'Someone'}</span>
                     <span className="text-[#9c9da6]/60">&bull; {formatDate(action.createdAt, { month: 'short', day: 'numeric' })}</span>
                   </div>
@@ -189,7 +183,6 @@ export default async function GoalPage({ params }: GoalPageProps) {
         </section>
       )}
 
-      {/* --- Message if goal is COMPLETED --- */}
       {effectiveStatus === GoalStatus.COMPLETED && (
         <div className={`${sectionCardClasses} mt-12 text-center py-10`}>
           <p className="text-2xl font-display text-green-500 mb-3">🎉 Goal Achieved! 🎉</p>
